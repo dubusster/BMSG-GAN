@@ -62,7 +62,10 @@ class FlatDirectoryImageDataset(Dataset):
 
         # apply the transforms on the image
         if self.transform is not None:
-            img = self.transform(img)
+            rgbimg = Image.new("RGB", img.size)
+            rgbimg.paste(img)
+            rgbimg = self.transform(rgbimg)
+            img = rgbimg
 
         # return the image:
         return img
@@ -129,7 +132,10 @@ class FoldersDistributedDataset(Dataset):
 
         # apply the transforms on the image
         if self.transform is not None:
-            img = self.transform(img)
+            rgbimg = Image.new("RGB", img.size)
+            rgbimg.paste(img)
+            rgbimg = self.transform(rgbimg)
+            img = rgbimg
 
         if img.shape[0] == 4:
             # ignore the alpha channel
