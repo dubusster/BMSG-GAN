@@ -1,6 +1,10 @@
 """ script for training the MSG-GAN on given dataset """
 
 # Set to True if using in SageMaker
+from pathlib import Path
+
+from imageio.plugins._tifffile import natural_sorted
+
 USE_SAGEMAKER = False
 
 import argparse
@@ -15,14 +19,7 @@ from torch.backends import cudnn
 if USE_SAGEMAKER:
     import sagemaker_containers
 
-# define the device for the training script
-device = th.device("cuda" if th.cuda.is_available() else "cpu")
 
-# enable fast training
-cudnn.benchmark = True
-
-# set seed = 3
-th.manual_seed(seed=3)
 
 
 def parse_arguments():
@@ -53,8 +50,8 @@ def parse_arguments():
                         help="saved state for discriminator optimizer")
 
     parser.add_argument("--images_dir", action="store", type=str,
-                        # default="../data/celeba",
-                        default=os.environ['SM_CHANNEL_TRAINING'],
+                        default="../data/celeba",
+                        # default=os.environ['SM_CHANNEL_TRAINING'],
                         help="path for the images directory")
 
     parser.add_argument("--folder_distributed", action="store", type=bool,
@@ -66,13 +63,13 @@ def parse_arguments():
                         help="whether to randomly mirror the images during training")
 
     parser.add_argument("--sample_dir", action="store", type=str,
-                        # default="samples/1/",
-                        default=os.environ['SM_MODEL_DIR'],
+                        default="samples/1/",
+                        # default=os.environ['SM_MODEL_DIR'],
                         help="path for the generated samples directory")
 
     parser.add_argument("--model_dir", action="store", type=str,
-                        # default="models/1/",
-                        default=os.environ['SM_MODEL_DIR'],
+                        default="models/1/",
+                        # default=os.environ['SM_MODEL_DIR'],
                         help="path for saved models directory")
 
     parser.add_argument("--loss_function", action="store", type=str,
@@ -151,6 +148,16 @@ def parse_arguments():
                         default=3,
                         help="number of parallel workers for reading files")
 
+    parser.add_argument("--cuda", action="store_true",
+                        help="whether to use cuda or not")
+
+    parser.add_argument("--seed", action="store", type=int,
+                        default=3,
+                        help="Seed for Torch randomness")
+
+    parser.add_argument("--last_checkpoint", action="store_true",
+                        help="start training where it stopped")
+
     args = parser.parse_args()
     print('args={}'.format(args))
 
@@ -163,10 +170,18 @@ def main(args):
     :param args: parsed command line arguments
     :return: None
     """
+
+    th.manual_seed(seed=args.seed)
     from MSG_GAN.GAN import MSG_GAN
     from data_processing.DataLoader import FlatDirectoryImageDataset, \
         get_transform, get_data_loader, FoldersDistributedDataset
     from MSG_GAN import Losses as lses
+
+    # define the device for the training script
+    device = th.device("cuda" if th.cuda.is_available() and args.cuda else "cpu")
+
+    # enable fast training
+    cudnn.benchmark = True
 
     # create a data source:
     data_source = FlatDirectoryImageDataset if not args.folder_distributed \
@@ -188,6 +203,15 @@ def main(args):
                       use_ema=args.use_ema,
                       ema_decay=args.ema_decay,
                       device=device)
+
+    if args.last_checkpoint:
+        models = list(Path(args.model_dir).glob("GAN_GEN*.pth"))
+        sorted_models = list(natural_sorted([str(m) for m in models]))
+        gen_model_path = sorted_models[-1]
+
+        models = list(Path(args.model_dir).glob("GAN_DIS*.pth"))
+        sorted_models = list(natural_sorted([str(m) for m in models]))
+        dis_model_path = sorted_models[-1]
 
     if args.generator_file is not None:
         # load the weights into generator
